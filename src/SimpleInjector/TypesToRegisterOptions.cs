@@ -57,8 +57,10 @@ namespace SimpleInjector
         /// <value>A boolean.</value>
         public bool IncludeDecorators { get; set; }
 
-#if NETSTANDARD
-        /// <see cref="TypeInfo.IsGenericTypeDefinition">Type.IsGenericTypeDefinition</see>
+#if NETSTANDARD1_0 || NETSTANDARD1_3
+        /// <summary>
+        /// Gets or sets a value indicating whether generic type definitions (types that have
+        /// <see cref="TypeInfo.IsGenericTypeDefinition">TypeInfo.IsGenericTypeDefinition</see>
         /// set to true) 
         /// should be included in the result. The default value for this property is <b>false</b>.
         /// </summary>

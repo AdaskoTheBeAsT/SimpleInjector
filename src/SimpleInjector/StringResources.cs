@@ -30,11 +30,16 @@ namespace SimpleInjector
     using System.Reflection;
     using SimpleInjector.Advanced;
     using SimpleInjector.Diagnostics;
-    using SimpleInjector.Internals;
 
     /// <summary>Internal helper for string resources.</summary>
     internal static class StringResources
     {
+        // Assembly.Location only exists in .NETStandard1.5 and up, .NET4.0 and PCL, but we only compile
+        // against .NETStandard1.0 and .NETStandard1.3. We don't want to add an extra build directly, solely
+        // for the Location property.
+        private static readonly PropertyInfo AssemblyLocationProperty =
+            typeof(Assembly).GetProperties().SingleOrDefault(p => p.Name == "Location");
+
         internal static bool UseFullyQualifiedTypeNames { get; set; } = false;
 
         internal static string ContainerCanNotBeChangedAfterUse(string stackTrace)
@@ -53,6 +58,23 @@ namespace SimpleInjector
 
             return message +
                 " The following stack trace describes the location where the container was locked:" +
+                Environment.NewLine + Environment.NewLine + stackTrace;
+        }
+
+        internal static string ContainerCanNotBeUsedAfterDisposal(Type type, string stackTrace)
+        {
+            string message = string.Format(CultureInfo.InvariantCulture,
+                "Cannot access a disposed object.{0}Object name: '{1}'.",
+                Environment.NewLine,
+                type.FullName);
+
+            if (stackTrace == null)
+            {
+                return message;
+            }
+
+            return message + Environment.NewLine +
+                "The following stack trace describes the location where the container was disposed:" +
                 Environment.NewLine + Environment.NewLine + stackTrace;
         }
 
@@ -77,14 +99,47 @@ namespace SimpleInjector
 
         internal static string NoRegistrationForTypeFound(Type serviceType, bool containerHasRegistrations,
             bool containerHasRelatedOneToOneMapping, bool containerHasRelatedCollectionMapping,
-            Type[] skippedDecorators) =>
+            Type[] skippedDecorators, Type[] lookalikes) =>
             string.Format(CultureInfo.InvariantCulture,
-                "No registration for type {0} could be found.{1}{2}{3}{4}",
+                "No registration for type {0} could be found.{1}{2}{3}{4}{5}",
                 serviceType.TypeName(),
                 ContainerHasNoRegistrationsAddition(containerHasRegistrations),
                 DidYouMeanToCallGetInstanceInstead(containerHasRelatedOneToOneMapping, serviceType),
                 DidYouMeanToCallGetAllInstancesInstead(containerHasRelatedCollectionMapping, serviceType),
-                NoteThatSkippedDecoratorsWereFound(serviceType, skippedDecorators));
+                NoteThatSkippedDecoratorsWereFound(serviceType, skippedDecorators),
+                NoteThatTypeLookalikesAreFound(serviceType, lookalikes));
+
+        internal static string KnownImplementationTypeShouldBeAssignableFromExpressionType(
+            Type knownImplementationType, Type currentExpressionType) =>
+            string.Format(CultureInfo.InvariantCulture,
+                "You are trying to set the {0}.{1} property with an Expression instance that has a type " +
+                "of {2}. The expression type however should be a {3} (or a sub type). You can't change " +
+                "the type of the expression using the {4} event. If you need to change the " +
+                "implementation, please use the {5} event instead.",
+                nameof(ExpressionBuildingEventArgs),
+                nameof(ExpressionBuildingEventArgs.Expression),
+                currentExpressionType.TypeName(),
+                knownImplementationType.TypeName(),
+                nameof(Container.ExpressionBuilding),
+                nameof(Container.ExpressionBuilt));
+
+        internal static string MultipleClosedTypesAreAssignableFromType(Type type, Type genericTypeDefinition, 
+            Type[] types, string otherMethod) =>
+            string.Format(CultureInfo.InvariantCulture,
+                "Your request is ambiguous. " +
+                "There are multiple closed version of {0} that are assignable from {1}, namely: {2}. " +
+                "Use {3} instead to get this list of closed types to select the proper type.",
+                genericTypeDefinition.TypeName(),
+                type.TypeName(),
+                types.Select(TypeName).ToCommaSeparatedText(),
+                otherMethod);
+
+        internal static string TypeIsNotAssignableFromOpenGenericType(Type type, Type genericTypeDefinition) =>
+            string.Format(CultureInfo.InvariantCulture,
+                "None of the base classes or implemented interfaces of {0}, nor {0} itself are a closed " +
+                "type of {1}.",
+                type.TypeName(),
+                genericTypeDefinition.TypeName());
 
         internal static string OpenGenericTypesCanNotBeResolved(Type serviceType) =>
             string.Format(CultureInfo.InvariantCulture,
@@ -108,11 +163,12 @@ namespace SimpleInjector
                 select string.Format(CultureInfo.InvariantCulture, "-[{0}] {1}", error.Name, error.Description);
 
             return string.Format(CultureInfo.InvariantCulture,
-                "The configuration is invalid. The following diagnostic warnings were reported:\n{0}\n" +
+                "The configuration is invalid. The following diagnostic warnings were reported:{1}{0}{1}" +
                 "See the Error property for detailed information about the warnings. " +
                 "Please see https://simpleinjector.org/diagnostics how to fix problems and how to suppress " +
                 "individual warnings.",
-                string.Join(Environment.NewLine, descriptions.Distinct()));
+                string.Join(Environment.NewLine, descriptions.Distinct()),
+                Environment.NewLine);
         }
 
         internal static string ConfigurationInvalidCreatingInstanceFailed(Type serviceType, Exception exception) =>
@@ -149,6 +205,11 @@ namespace SimpleInjector
                 "different registration or not.",
                 nameof(ContainerOptions.AllowOverridingRegistrations));
 
+        internal static string MakingRegistrationsWithTypeConstraintsInOverridingModeIsNotSupported() =>
+            MakingConditionalRegistrationsInOverridingModeIsNotSupported() +
+            " Your registration is considered conditional, because of its generic type constraints. " +
+            "This makes Simple Injector apply it conditionally, based on its type constraints.";
+
         internal static string NonGenericTypeAlreadyRegisteredAsConditionalRegistration(Type serviceType) =>
             NonGenericTypeAlreadyRegistered(serviceType, existingRegistrationIsConditional: true);
 
@@ -160,34 +221,41 @@ namespace SimpleInjector
                 "Collection of items for type {0} has already been registered " +
                 "and the container is currently not configured to allow overriding registrations. " +
                 "To allow overriding the current registration, please create the container using the " +
-                "constructor overload that takes a {1} instance and set the {2} property to true.",
+                "constructor overload that takes a {1} instance and set the {2} property to true. " +
+                "In case it is your goal to append items to an already registered collection, please use " +
+                "the {3} extension method. This method is located in the {4} namespace.",
                 serviceType.TypeName(),
                 nameof(ContainerOptions),
-                nameof(ContainerOptions.AllowOverridingRegistrations));
+                nameof(ContainerOptions.AllowOverridingRegistrations),
+                nameof(AdvancedExtensions.AppendToCollection),
+                typeof(AdvancedExtensions).Namespace);
 
         internal static string ParameterTypeMustBeRegistered(InjectionTargetInfo target, int numberOfConditionals,
-            bool hasRelatedOneToOneMapping, bool hasRelatedCollectionMapping, Type[] skippedDecorators) =>
+            bool hasRelatedOneToOneMapping, bool hasRelatedCollectionMapping, Type[] skippedDecorators,
+            Type[] lookalikes) =>
             target.Parameter != null
                 ? string.Format(CultureInfo.InvariantCulture,
                     "The constructor of type {0} contains the parameter with name '{1}' and type {2} that " +
-                    "is not registered. Please ensure {2} is registered, or change the constructor of {0}.{3}{4}{5}{6}",
+                    "is not registered. Please ensure {2} is registered, or change the constructor of {0}.{3}{4}{5}{6}{7}",
                     target.Member.DeclaringType.TypeName(),
                     target.Name,
                     target.TargetType.TypeName(),
                     GetAdditionalInformationAboutExistingConditionalRegistrations(target, numberOfConditionals),
                     DidYouMeanToDependOnNonCollectionInstead(hasRelatedOneToOneMapping, target.TargetType),
                     DidYouMeanToDependOnCollectionInstead(hasRelatedCollectionMapping, target.TargetType),
-                    NoteThatSkippedDecoratorsWereFound(target.TargetType, skippedDecorators))
+                    NoteThatSkippedDecoratorsWereFound(target.TargetType, skippedDecorators),
+                    NoteThatTypeLookalikesAreFound(target.TargetType, lookalikes, numberOfConditionals))
                 : string.Format(CultureInfo.InvariantCulture,
                     "Type {0} contains the property with name '{1}' and type {2} that is not registered. " +
-                    "Please ensure {2} is registered, or change {0}.{3}{4}{5}{6}",
+                    "Please ensure {2} is registered, or change {0}.{3}{4}{5}{6}{7}",
                     target.Member.DeclaringType.TypeName(),
                     target.Name,
                     target.TargetType.TypeName(),
                     GetAdditionalInformationAboutExistingConditionalRegistrations(target, numberOfConditionals),
                     DidYouMeanToDependOnNonCollectionInstead(hasRelatedOneToOneMapping, target.TargetType),
                     DidYouMeanToDependOnCollectionInstead(hasRelatedCollectionMapping, target.TargetType),
-                    NoteThatSkippedDecoratorsWereFound(target.TargetType, skippedDecorators));
+                    NoteThatSkippedDecoratorsWereFound(target.TargetType, skippedDecorators),
+                    NoteThatTypeLookalikesAreFound(target.TargetType, lookalikes, numberOfConditionals));
 
         internal static string TypeMustHaveASinglePublicConstructorButItHasNone(Type serviceType) =>
             string.Format(CultureInfo.InvariantCulture,
@@ -266,11 +334,10 @@ namespace SimpleInjector
                 "The configuration is invalid. The type {0} is directly or indirectly depending on itself.",
                 serviceType.TypeName());
 
-        internal static string CyclicDependencyGraphMessage(CyclicDependencyException exception) =>
+        internal static string CyclicDependencyGraphMessage(IEnumerable<Type> dependencyCycle) =>
             string.Format(CultureInfo.InvariantCulture,
-                "{0} The cyclic graph contains the following types: {1}.",
-                exception.Message,
-                string.Join(" -> ", exception.DependencyCycle.Select(TypeName)));
+                "The cyclic graph contains the following types: {0}.",
+                string.Join(" -> ", dependencyCycle.Select(TypeName)));
 
         internal static string UnableToResolveTypeDueToSecurityConfiguration(Type serviceType,
             Exception innerException) =>
@@ -353,31 +420,26 @@ namespace SimpleInjector
                 service.IsInterface() ? "implement" : "inherit from",
                 service.TypeName());
 
-        internal static string TheInitializersCouldNotBeApplied(Type type, Exception innerException) =>
-            string.Format(CultureInfo.InvariantCulture,
-                "The initializer(s) for type {0} could not be applied. {1}",
-                type.TypeName(), innerException.Message);
-
         internal static string DependencyInjectionBehaviorReturnedNull(IDependencyInjectionBehavior behavior) =>
             string.Format(CultureInfo.InvariantCulture,
-                "The {0} that was registered through the Container.{3}.{4} property, returned a null " +
-                "reference after its BuildExpression() method. {1}.BuildExpression implementations should " +
-                "never return null, but should throw a {2} with an expressive message instead.",
+                "The {0} that was registered through the Container.{1}.{2} property, returned a null " +
+                "reference from its {3} method. {4}.{3} implementations should not return null when " +
+                "supplied with throwOnFailure = true, but should throw an {5} with an expressive message " +
+                "instead.",
                 behavior.GetType().TypeName(),
-                nameof(IDependencyInjectionBehavior),
-                typeof(ActivationException).FullName,
                 nameof(Container.Options),
-                nameof(ContainerOptions.DependencyInjectionBehavior));
+                nameof(ContainerOptions.DependencyInjectionBehavior),
+                nameof(IDependencyInjectionBehavior.GetInstanceProducer),
+                nameof(IDependencyInjectionBehavior),
+                typeof(ActivationException).FullName);
 
         internal static string ConstructorResolutionBehaviorReturnedNull(
-            IConstructorResolutionBehavior selectionBehavior, Type serviceType, Type implementationType) =>
+            IConstructorResolutionBehavior selectionBehavior, Type implementationType) =>
             string.Format(CultureInfo.InvariantCulture,
-                "The {0} that was registered through Container.{5}.{6} returned a null reference after " +
-                "its {7}(Type, Type) method was supplied with values '{1}' for serviceType and '{2}' for " +
-                "implementationType. {3}.{7} implementations should never return null, but should throw " +
-                "a {4} with an expressive message instead.",
+                "The {0} that was registered through Container.{4}.{5} returned a null reference after " +
+                "its {6} method was supplied with implementationType '{1}'. {2}.{6} implementations " +
+                "should never return null, but should throw a {3} with an expressive message instead.",
                 selectionBehavior.GetType().TypeName(),
-                serviceType.TypeName(),
                 implementationType.TypeName(),
                 nameof(IConstructorResolutionBehavior),
                 typeof(ActivationException).FullName,
@@ -386,13 +448,12 @@ namespace SimpleInjector
                 nameof(IConstructorResolutionBehavior.GetConstructor));
 
         internal static string LifestyleSelectionBehaviorReturnedNull(
-            ILifestyleSelectionBehavior selectionBehavior, Type serviceType, Type implementationType) =>
+            ILifestyleSelectionBehavior selectionBehavior, Type implementationType) =>
             string.Format(CultureInfo.InvariantCulture,
-                "The {0} that was registered through Container.{4}.{5} returned a null reference after " +
-                "its {6}(Type, Type) method was supplied with values '{1}' for serviceType and '{2}' for " +
-                "implementationType. {3}.{6} implementations should never return null.",
+                "The {0} that was registered through Container.{3}.{4} returned a null reference after " +
+                "its {5} method was supplied with implementationType '{1}'. {2}.{5} implementations " +
+                "should never return null.",
                 selectionBehavior.GetType().TypeName(),
-                serviceType.TypeName(),
                 implementationType.TypeName(),
                 nameof(ILifestyleSelectionBehavior),
                 nameof(Container.Options),
@@ -500,9 +561,12 @@ namespace SimpleInjector
             string.Format(CultureInfo.InvariantCulture,
                 "The supplied list of types contains one or multiple open generic types, but this method is " +
                 "unable to handle open generic types because it can only map closed generic service types " +
-                "to a single implementation. Try using {1} instead. Invalid types: {0}.",
-                openGenericTypes.Select(type => type.TypeName()).ToCommaSeparatedText(),
-                nameof(Container.RegisterCollection));
+                "to a single implementation. " +
+                "You must register the open-generic types separately using the Register(Type, Type) " +
+                $"overload. Alternatively, try using {nameof(Container.RegisterCollection)} instead, " +
+                "if you expect to have multiple implementations per closed-generic abstraction. " + 
+                "Invalid types: {0}.",
+                openGenericTypes.Select(type => type.TypeName()).ToCommaSeparatedText());
 
         internal static string AppendingRegistrationsToContainerUncontrolledCollectionsIsNotSupported(
             Type serviceType) =>
@@ -539,14 +603,15 @@ namespace SimpleInjector
             ScopedLifestyle lifestyle) =>
             string.Format(CultureInfo.InvariantCulture,
                 "The {0} is registered as '{1}' lifestyle, but the instance is requested outside the " +
-                "context of a {1}.",
+                "context of an active ({1}) scope.",
                 serviceType.TypeName(),
                 lifestyle.Name);
 
-        internal static string ThisMethodCanOnlyBeCalledWithinTheContextOfAnActiveScope(string lifestyleName) =>
+        internal static string ThisMethodCanOnlyBeCalledWithinTheContextOfAnActiveScope(
+            ScopedLifestyle lifestyle) =>
             string.Format(CultureInfo.InvariantCulture,
-                "This method can only be called within the context of an active {0}.",
-                lifestyleName);
+                "This method can only be called within the context of an active ({0}) scope.",
+                lifestyle.Name);
 
         internal static string DecoratorFactoryReturnedNull(Type serviceType) =>
             string.Format(CultureInfo.InvariantCulture,
@@ -809,7 +874,7 @@ namespace SimpleInjector
                     " There is, however, a registration for {0}; Did you mean to call GetInstance<{0}>() " +
                     "or depend on {0}? Or did you mean to register a collection of types using " +
                     "RegisterCollection?",
-                    collectionServiceType.GetGenericArguments()[0].ToFriendlyName())
+                    collectionServiceType.GetGenericArguments()[0].TypeName())
                 : string.Empty;
 
         private static string DidYouMeanToDependOnNonCollectionInstead(bool hasRelatedOneToOneMapping,
@@ -817,7 +882,7 @@ namespace SimpleInjector
             hasRelatedOneToOneMapping
                 ? string.Format(CultureInfo.InvariantCulture,
                     " There is, however, a registration for {0}; Did you mean to depend on {0}?",
-                    collectionServiceType.GetGenericArguments()[0].ToFriendlyName())
+                    collectionServiceType.GetGenericArguments()[0].TypeName())
                 : string.Empty;
 
         private static string DidYouMeanToCallGetAllInstancesInstead(bool hasCollection, Type serviceType) =>
@@ -832,8 +897,14 @@ namespace SimpleInjector
         private static string DidYouMeanToDependOnCollectionInstead(bool hasCollection, Type serviceType) =>
             hasCollection
                 ? string.Format(CultureInfo.InvariantCulture,
-                    " There is, however, a registration for {0}; Did you mean to depend on {0}?",
-                    typeof(IEnumerable<>).MakeGenericType(serviceType).TypeName())
+                    " There is, however, a registration for {0}; Did you mean to depend on {0}? " +
+                    "If you meant to depend on {1}, use should use one of the {3} overloads instead of using {2}." +
+                    "Please see https://simpleinjector.org/collections for more information " +
+                    "about registering and resolving collections.",
+                    typeof(IEnumerable<>).MakeGenericType(serviceType).TypeName(),
+                    serviceType.TypeName(),
+                    nameof(Container.RegisterCollection),
+                    nameof(Container.Register))
                 : string.Empty;
 
         private static string NoteThatSkippedDecoratorsWereFound(Type serviceType, Type[] decorators) =>
@@ -850,9 +921,78 @@ namespace SimpleInjector
                     decorators.Length == 1 ? "itself" : "themselves")
                 : string.Empty;
 
+        private static string NoteThatTypeLookalikesAreFound(Type serviceType, Type[] lookalikes,
+            int numberOfConditionals = 0)
+        {
+            if (!lookalikes.Any() || numberOfConditionals > 0)
+            {
+                return string.Empty;
+            }
+
+            Type duplicateAssemblyLookalike = GetDuplicateLoadedAssemblyLookalikeTypeOrNull(serviceType, lookalikes);
+
+            if (duplicateAssemblyLookalike != null)
+            {
+                return string.Format(CultureInfo.InvariantCulture,
+                    " Type {0} is a member of the assembly {1} which seems to have been loaded more than " +
+                    "once. The CLR believes the second instance of the assembly is a different assembly " +
+                    "to the first. It is this multiple loading of assemblies that is causing this issue. " +
+                    "The most likely cause is that the same assembly has been loaded from different " +
+                    "locations within different contexts. " +
+                    "{2}" +
+                    "Please see https://simpleinjector.org/asmld for more information about this " +
+                    "problem and how to solve it.",
+                    Types.ToCSharpFriendlyName(duplicateAssemblyLookalike, fullyQualifiedName: true),
+                    serviceType.GetAssembly().FullName,
+                    BuildAssemblyLocationMessage(serviceType, duplicateAssemblyLookalike));
+            }
+            else
+            {
+                return string.Format(CultureInfo.InvariantCulture,
+                    " Note that there exists a registration for a different type {0} while " +
+                    "the requested type is {1}.",
+                    lookalikes.First().ToFriendlyName(fullyQualifiedName: true),
+                    serviceType.ToFriendlyName(fullyQualifiedName: true));
+            }
+        }
+
+        private static string BuildAssemblyLocationMessage(Type serviceType, Type duplicateAssemblyLookalike)
+        {
+            string serviceTypeLocation = GetAssemblyLocationOrNull(serviceType);
+            string lookalikeLocation = GetAssemblyLocationOrNull(duplicateAssemblyLookalike);
+
+            if (serviceTypeLocation != lookalikeLocation
+                && (lookalikeLocation != null || serviceTypeLocation != null))
+            {
+                return string.Format(CultureInfo.InvariantCulture,
+                    "The assembly of the requested type is located at {0}, while the " +
+                    "assembly of the registered type is located at {1}. ",
+                    serviceTypeLocation,
+                    lookalikeLocation);
+            }
+
+            return string.Empty;
+        }
+
+        private static string GetAssemblyLocationOrNull(Type type) =>
+            AssemblyLocationProperty != null && !type.GetAssembly().IsDynamic
+                ? (string)AssemblyLocationProperty.GetValue(type.GetAssembly(), null)
+                : null;
+
+        private static Type GetDuplicateLoadedAssemblyLookalikeTypeOrNull(Type serviceType, Type[] lookalikes) => (
+            from lookalike in lookalikes
+            where !object.ReferenceEquals(serviceType.GetAssembly(), lookalike.GetAssembly())
+            where serviceType.GetAssembly().FullName == lookalike.GetAssembly().FullName
+            let lookalikeName = lookalike.ToFriendlyName(fullyQualifiedName: true)
+            let serviceTypeFullName = serviceType.ToFriendlyName(fullyQualifiedName: true)
+            where lookalikeName == serviceTypeFullName || (serviceType.IsGenericType()
+                && serviceType.GetGenericTypeDefinition().ToFriendlyName(fullyQualifiedName: true) == lookalikeName)
+            select lookalike)
+            .FirstOrDefault();
+
         private static string TypeName(this Type type) => type.ToFriendlyName(UseFullyQualifiedTypeNames);
 
-        private static string CSharpFriendlyName(Type type) => 
-            Helpers.ToCSharpFriendlyName(type, UseFullyQualifiedTypeNames);
+        private static string CSharpFriendlyName(Type type) =>
+            Types.ToCSharpFriendlyName(type, UseFullyQualifiedTypeNames);
     }
 }

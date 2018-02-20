@@ -30,7 +30,6 @@ namespace SimpleInjector
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
     using System.Linq.Expressions;
-    using System.Reflection;
     using System.Threading;
     using SimpleInjector.Advanced;
     using SimpleInjector.Diagnostics;
@@ -62,9 +61,8 @@ namespace SimpleInjector
     [DebuggerTypeProxy(typeof(ContainerDebugView))]
     public partial class Container : IDisposable
     {
-        // NOTE: This number should be low to prevent memory leaks, since dynamically created assemblies can't
-        // be unloaded.
-        private const int MaximumNumberOfContainersWithDynamicallyCreatedAssemblies = 5;
+        internal readonly Dictionary<object, Dictionary<Type, WeakReference>> LifestyleRegistrationCache =
+            new Dictionary<object, Dictionary<Type, WeakReference>>();
 
         private static long counter;
 
@@ -92,8 +90,9 @@ namespace SimpleInjector
 
         // Flag to signal that the container can't be altered by using any of the Register methods.
         private bool locked;
-
         private string stackTraceThatLockedTheContainer;
+        private bool disposed;
+        private string stackTraceThatDisposedTheContainer;
 
         private EventHandler<UnregisteredTypeEventArgs> resolveUnregisteredType;
         private EventHandler<ExpressionBuildingEventArgs> expressionBuilding;
@@ -107,11 +106,7 @@ namespace SimpleInjector
 
             this.disposableSingletonsScope = new Scope(this);
 
-            this.Options = new ContainerOptions(this)
-            {
-                EnableDynamicAssemblyCompilation =
-                    this.containerId < MaximumNumberOfContainersWithDynamicallyCreatedAssemblies
-            };
+            this.Options = new ContainerOptions(this);
 
             this.SelectionBasedLifestyle = new LifestyleSelectionBehaviorProxyLifestyle(this.Options);
 
@@ -121,9 +116,9 @@ namespace SimpleInjector
         // Wrapper for instance initializer delegates
         private interface IInstanceInitializer
         {
-            bool AppliesTo(Type implementationType, InitializationContext context);
+            bool AppliesTo(Type implementationType, InitializerContext context);
 
-            Action<T> CreateAction<T>(InitializationContext context);
+            Action<T> CreateAction<T>(InitializerContext context);
         }
 
         /// <summary>Gets the container options.</summary>
@@ -166,6 +161,8 @@ namespace SimpleInjector
         }
 
         internal bool HasRegistrations => this.explicitRegistrations.Any() || this.collectionResolvers.Any();
+
+        internal bool HasResolveInterceptors => this.resolveInterceptors.Count > 0;
 
         /// <summary>
         /// Returns an array with the current registrations. This list contains all explicitly registered
@@ -273,6 +270,13 @@ namespace SimpleInjector
         {
             this.Dispose(true);
             GC.SuppressFinalize(this);
+
+            if (!this.disposed)
+            {
+                this.disposed = true;
+
+                GetStackTrace(ref this.stackTraceThatDisposedTheContainer);
+            }
         }
 
         internal InstanceProducer[] GetRootRegistrations(bool includeInvalidContainerRegisteredTypes)
@@ -351,12 +355,12 @@ namespace SimpleInjector
             }
         }
 
-        internal Expression OnExpressionBuilding(Registration registration, Type serviceType,
-            Type implementationType, Expression instanceCreatorExpression)
+        internal Expression OnExpressionBuilding(Registration registration, Type implementationType, 
+            Expression instanceCreatorExpression)
         {
             if (this.expressionBuilding != null)
             {
-                var e = new ExpressionBuildingEventArgs(serviceType, implementationType,
+                var e = new ExpressionBuildingEventArgs(implementationType,
                     instanceCreatorExpression, registration.Lifestyle);
 
                 var relationships = new KnownRelationshipCollection(registration.GetRelationships().ToList());
@@ -396,7 +400,7 @@ namespace SimpleInjector
         }
 
         /// <summary>Prevents any new registrations to be made to the container.</summary>
-#if NET45 || NETSTANDARD
+#if !NET40
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
 #endif
         internal void LockContainer()
@@ -409,13 +413,30 @@ namespace SimpleInjector
             }
         }
 
-        internal Func<object> WrapWithResolveInterceptor(InitializationContext context, Func<object> producer)
+#if !NET40
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+#endif
+        internal void ThrowWhenDisposed()
         {
-            ResolveInterceptor[] interceptors = this.GetResolveInterceptorsFor(context);
-
-            foreach (var interceptor in interceptors)
+            if (this.disposed)
             {
-                producer = ApplyResolveInterceptor(interceptor, context, producer);
+                // Performance optimization: Throwing moved to another method to allow this method to be in-lined.
+                this.ThrowContainerDisposedException();
+            }
+        }
+
+        internal Func<object> WrapWithResolveInterceptor(InstanceProducer instanceProducer, Func<object> producer)
+        {
+            if (this.HasResolveInterceptors)
+            {
+                var context = new InitializationContext(instanceProducer, instanceProducer.Registration);
+
+                ResolveInterceptor[] interceptors = this.GetResolveInterceptorsFor(context);
+
+                foreach (ResolveInterceptor interceptor in interceptors)
+                {
+                    producer = ApplyResolveInterceptor(interceptor, context, producer);
+                }
             }
 
             return producer;
@@ -426,8 +447,10 @@ namespace SimpleInjector
             this.disposableSingletonsScope.RegisterForDisposal(disposable);
         }
 
-        internal void ThrowWhenContainerIsLocked()
+        internal void ThrowWhenContainerIsLockedOrDisposed()
         {
+            this.ThrowWhenDisposed();
+
             // By using a lock, we have the certainty that all threads will see the new value for 'locked'
             // immediately.
             lock (this.locker)
@@ -448,7 +471,8 @@ namespace SimpleInjector
                     this.GetNumberOfConditionalRegistrationsFor(target.TargetType),
                     this.ContainsOneToOneRegistrationForCollectionType(target.TargetType),
                     this.ContainsCollectionRegistrationFor(target.TargetType),
-                    this.GetNonGenericDecoratorsThatWereSkippedDuringBatchRegistration(target.TargetType)));
+                    this.GetNonGenericDecoratorsThatWereSkippedDuringBatchRegistration(target.TargetType),
+                    this.GetLookalikesForMissingType(target.TargetType)));
         }
 
         /// <summary>Releases all instances that are cached by the <see cref="Container"/> object.</summary>
@@ -492,6 +516,14 @@ namespace SimpleInjector
             }
         }
 
+        private void ThrowContainerDisposedException()
+        {
+            throw new ObjectDisposedException(
+                objectName: null,
+                message: StringResources.ContainerCanNotBeUsedAfterDisposal(this.GetType(),
+                    this.stackTraceThatDisposedTheContainer));
+        }
+
         private static object ThrowWhenResolveInterceptorReturnsNull(object instance)
         {
             if (instance == null)
@@ -504,11 +536,6 @@ namespace SimpleInjector
 
         private ResolveInterceptor[] GetResolveInterceptorsFor(InitializationContext context)
         {
-            if (!this.resolveInterceptors.Any())
-            {
-                return Helpers.Array<ResolveInterceptor>.Empty;
-            }
-
             return (
                 from resolveInterceptor in this.resolveInterceptors
                 where resolveInterceptor.Predicate(context)
@@ -516,8 +543,15 @@ namespace SimpleInjector
                 .ToArray();
         }
 
-        private Action<T>[] GetInstanceInitializersFor<T>(Type type, InitializationContext context)
+        private Action<T>[] GetInstanceInitializersFor<T>(Type type, Registration registration)
         {
+            if (this.instanceInitializers.Count == 0)
+            {
+                return Helpers.Array<Action<T>>.Empty;
+            }
+
+            var context = new InitializerContext(registration);
+
             return (
                 from instanceInitializer in this.instanceInitializers
                 where instanceInitializer.AppliesTo(type, context)
@@ -541,9 +575,12 @@ namespace SimpleInjector
        
         private void AddInstanceProducer(InstanceProducer producer)
         {
-            if (typeof(IEnumerable<>).IsGenericTypeDefinitionOf(producer.ServiceType))
+            // HACK: Conditional registrations for IEnumerable<T> are not added as uncontrolled collection,
+            // because that would lose the conditional ability and would cause collections to be appended
+            // together, instead of selected conditionally. (see #468).
+            if (typeof(IEnumerable<>).IsGenericTypeDefinitionOf(producer.ServiceType) && producer.IsUnconditional)
             {
-                this.AddCollectionInstanceProducer(producer);
+                this.AddUncontrolledCollectionInstanceProducer(producer);
             }
             else
             {
@@ -555,7 +592,7 @@ namespace SimpleInjector
             }
         }
 
-        private void AddCollectionInstanceProducer(InstanceProducer producer)
+        private void AddUncontrolledCollectionInstanceProducer(InstanceProducer producer)
         {
             Type itemType = producer.ServiceType.GetGenericArguments()[0];
 
@@ -593,7 +630,8 @@ namespace SimpleInjector
                 : null;
         }
 
-        private InstanceProducer TryGetInstanceProducerForRegisteredCollection(Type enumerableServiceType) =>
+        private InstanceProducer TryGetInstanceProducerForRegisteredCollection(
+            Type enumerableServiceType) =>
             typeof(IEnumerable<>).IsGenericTypeDefinitionOf(enumerableServiceType)
                 ? this.GetInstanceProducerForRegisteredCollection(
                     enumerableServiceType.GetGenericArguments()[0])
@@ -648,6 +686,31 @@ namespace SimpleInjector
                 () => Lifestyle.Singleton.CreateProducer(() => this, this));
         }
 
+        private Type[] GetLookalikesForMissingType(Type missingServiceType) =>
+            this.GetLookalikesForMissingNonGenericType(missingServiceType.ToFriendlyName())
+                .Concat(missingServiceType.IsGenericType()
+                    ? this.GetLookalikesForMissingGeneritTypeDefinitions(
+                        missingServiceType.GetGenericTypeDefinition().ToFriendlyName())
+                    : Enumerable.Empty<Type>())
+                .ToArray();
+
+        // A lookalike type is a registered type that shares the same type name (where casing is ignored
+        // and the parent type name of a nested type is included) as the missing type. Nested types are
+        // mostly excluded from this list, because it would be quite common for developers to have lots
+        // of nested types with the same name.
+        private IEnumerable<Type> GetLookalikesForMissingNonGenericType(string missingServiceTypeName) => 
+            from registration in this.GetCurrentRegistrations(false, includeExternalProducers: false)
+            let typeName = registration.ServiceType.ToFriendlyName()
+            where StringComparer.OrdinalIgnoreCase.Equals(typeName, missingServiceTypeName)
+            select registration.ServiceType;
+
+        private IEnumerable<Type> GetLookalikesForMissingGeneritTypeDefinitions(string missingTypeDefName) =>
+            from type in this.explicitRegistrations.Keys
+            where type.IsGenericTypeDefinition()
+            let friendlyName = type.GetGenericTypeDefinition().ToFriendlyName()
+            where StringComparer.OrdinalIgnoreCase.Equals(friendlyName, missingTypeDefName)
+            select type;
+
         private sealed class ContextualResolveInterceptor
         {
             public readonly ResolveInterceptor Interceptor;
@@ -666,14 +729,14 @@ namespace SimpleInjector
             private Type serviceType;
             private object instanceInitializer;
 
-            public bool AppliesTo(Type implementationType, InitializationContext context)
+            public bool AppliesTo(Type implementationType, InitializerContext context)
             {
-                var typeHierarchy = Helpers.GetTypeHierarchyFor(implementationType);
+                var typeHierarchy = Types.GetTypeHierarchyFor(implementationType);
 
                 return typeHierarchy.Contains(this.serviceType);
             }
 
-            public Action<T> CreateAction<T>(InitializationContext context)
+            public Action<T> CreateAction<T>(InitializerContext context)
             {
                 return Helpers.CreateAction<T>(this.instanceInitializer);
             }
@@ -691,22 +754,19 @@ namespace SimpleInjector
 
         private sealed class ContextualInstanceInitializer : IInstanceInitializer
         {
-            private Predicate<InitializationContext> predicate;
+            private Predicate<InitializerContext> predicate;
             private Action<InstanceInitializationData> instanceInitializer;
 
-            public bool AppliesTo(Type implementationType, InitializationContext context) => this.predicate(context);
+            public bool AppliesTo(Type implementationType, InitializerContext context) => this.predicate(context);
 
-            public Action<T> CreateAction<T>(InitializationContext context)
+            public Action<T> CreateAction<T>(InitializerContext context)
             {
-                return instance =>
-                {
-                    this.instanceInitializer(new InstanceInitializationData(context, instance));
-                };
+                return instance => this.instanceInitializer(new InstanceInitializationData(context, instance));
             }
 
             internal static IInstanceInitializer Create(
                 Action<InstanceInitializationData> instanceInitializer,
-                Predicate<InitializationContext> predicate)
+                Predicate<InitializerContext> predicate)
             {
                 return new ContextualInstanceInitializer
                 {

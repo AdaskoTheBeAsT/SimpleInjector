@@ -24,16 +24,14 @@ namespace SimpleInjector.Internals
 {
     using System;
     using System.Diagnostics;
+    using System.Diagnostics.CodeAnalysis;
     using System.Linq;
-    using System.Reflection;
 
     /// <summary>
     /// A map containing a generic argument (such as T) and the concrete type (such as Int32) that it
     /// represents.
     /// </summary>
-    [DebuggerDisplay(
-        nameof(Argument) + ": {SimpleInjector.Helpers.ToFriendlyName(" + nameof(Argument) + "), nq}, " +
-        nameof(ConcreteType) + ": {SimpleInjector.Helpers.ToFriendlyName(" + nameof(ConcreteType) + "), nq}")]
+    [DebuggerDisplay("{DebuggerDisplay, nq}")]
     internal sealed class ArgumentMapping : IEquatable<ArgumentMapping>
     {
         internal ArgumentMapping(Type argument, Type concreteType)
@@ -42,10 +40,17 @@ namespace SimpleInjector.Internals
             this.ConcreteType = concreteType;
         }
 
-        [DebuggerDisplay("{SimpleInjector.Helpers.ToFriendlyName(" + nameof(Argument) + "), nq}")]
+        [SuppressMessage("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode",
+            Justification = "This method is called by the debugger.")]
+        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        internal string DebuggerDisplay =>
+            $"{nameof(Argument)}: {this.Argument.ToFriendlyName()}, " +
+            $"{nameof(ConcreteType)}: {this.ConcreteType.ToFriendlyName()}";
+
+        [DebuggerDisplay("{Argument, nq}")]
         internal Type Argument { get; }
 
-        [DebuggerDisplay("{SimpleInjector.Helpers.ToFriendlyName(" + nameof(ConcreteType) + "), nq}")]
+        [DebuggerDisplay("{ConcreteType, nq}")]
         internal Type ConcreteType { get; }
 
         internal bool TypeConstraintsAreSatisfied => 
