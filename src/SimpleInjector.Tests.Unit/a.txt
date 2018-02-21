@@ -1,0 +1,129 @@
+Kompilacja zostaàa rozpocz©ta, czekaj...
+Kompilacja zako‰czona.
+
+Uruchomienie testu dla: C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\bin\Debug\netcoreapp2.0\SimpleInjector.Tests.Unit.dll(.NETCoreApp,Version=v2.0)
+Narz©dzie wiersza polecenia firmy Microsoft (R) sàuæ•ce do wykonania test¢w (wersja 15.5.0)
+Copyright (c) Microsoft Corporation. Wszelkie prawa zastrzeæone.
+
+Trwa rozpoczynanie wykonywania testu, czekaj...
+Zako‰czone niepowodzeniem: Analyze_UnusedProducerWithGarbageCollected_DoesNotProduceAnyWarnings
+Komunikat o bà©dzie:
+ Test method SimpleInjector.Diagnostics.Tests.Unit.ExternalProducerCreationAnalysisTests.Analyze_UnusedProducerWithGarbageCollected_DoesNotProduceAnyWarnings threw exception: 
+SimpleInjector.DiagnosticVerificationException: The configuration is invalid. The following diagnostic warnings were reported:
+-[Lifestyle Mismatch] RealUserService (Singleton) depends on IUserRepository implemented by InMemoryUserRepository (Transient).
+See the Error property for detailed information about the warnings. Please see https://simpleinjector.org/diagnostics how to fix problems and how to suppress individual warnings.
+ólad stosu:
+    at SimpleInjector.Container.ThrowOnDiagnosticWarnings() in C:\github\SimpleInjector\src\SimpleInjector\Container.Verification.cs:line 247
+   at SimpleInjector.Container.Verify(VerificationOption option) in C:\github\SimpleInjector\src\SimpleInjector\Container.Verification.cs:line 81
+   at SimpleInjector.Container.Verify() in C:\github\SimpleInjector\src\SimpleInjector\Container.Verification.cs:line 56
+   at SimpleInjector.Diagnostics.Tests.Unit.ExternalProducerCreationAnalysisTests.Analyze_UnusedProducerWithGarbageCollected_DoesNotProduceAnyWarnings() in C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\Diagnostics\ExternalProducerCreationAnalysisTests.cs:line 44
+
+Zako‰czone niepowodzeniem: BuildExpression_WithHybridLifestyle_BuildsExpectedExpression
+Komunikat o bà©dzie:
+ Assert.AreEqual failed. Expected:<IIF(Invoke(value(System.Func`1[System.Boolean])), Convert(new SqlUserRepository()), Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository)))>. Actual:<IIF(Invoke(value(System.Func`1[System.Boolean])), Convert(new SqlUserRepository(), SqlUserRepository), Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository), SqlUserRepository))>. 
+ólad stosu:
+   at SimpleInjector.Tests.Unit.Lifestyles.HybridLifestyleTests.BuildExpression_WithHybridLifestyle_BuildsExpectedExpression() in C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\Lifestyles\HybridLifestyleTests.cs:line 28
+
+Zako‰czone niepowodzeniem: BuildExpression_WithHybridLifestyleAndRegisteredDelegate_BuildsExpectedExpression
+Komunikat o bà©dzie:
+ Assert.IsTrue failed. Actual: IIF(Invoke(value(System.Func`1[System.Boolean])), Convert(Invoke(value(System.Func`2[SimpleInjector.Tests.Unit.IUserRepository,SimpleInjector.Tests.Unit.IUserRepository]), Invoke(value(System.Func`1[SimpleInjector.Tests.Unit.IUserRepository]))), IUserRepository), Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository), IUserRepository))
+ólad stosu:
+   at SimpleInjector.Tests.Unit.Lifestyles.HybridLifestyleTests.BuildExpression_WithHybridLifestyleAndRegisteredDelegate_BuildsExpectedExpression() in C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\Lifestyles\HybridLifestyleTests.cs:line 55
+
+Zako‰czone niepowodzeniem: ExpressionBuilt_Always_GetsCalledOnceOnlyForTheHybridLifestyle
+Komunikat o bà©dzie:
+ Assert.AreEqual failed. Expected:<IIF(Invoke(value(System.Func`1[System.Boolean])), Convert(new SqlUserRepository()), Convert(new SqlUserRepository()))>. Actual:<IIF(Invoke(value(System.Func`1[System.Boolean])), Convert(new SqlUserRepository(), SqlUserRepository), Convert(new SqlUserRepository(), SqlUserRepository))>. 
+ólad stosu:
+   at SimpleInjector.Tests.Unit.Lifestyles.HybridLifestyleTests.ExpressionBuilt_Always_GetsCalledOnceOnlyForTheHybridLifestyle() in C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\Lifestyles\HybridLifestyleTests.cs:line 312
+
+
+ù•czna liczba test¢w: 1460. Zako‰czone pomyòlnie: 1456. Zako‰czone niepowodzeniem: 4. Pomini©te: 0.
+Czas wykonywania testu: 4,6808 Sekundy.
+Uruchomienie testu dla: C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\bin\Debug\net471\SimpleInjector.Tests.Unit.dll(.NETFramework,Version=v4.7.1)
+Narz©dzie wiersza polecenia firmy Microsoft (R) sàuæ•ce do wykonania test¢w (wersja 15.5.0)
+Copyright (c) Microsoft Corporation. Wszelkie prawa zastrzeæone.
+
+Trwa rozpoczynanie wykonywania testu, czekaj...
+Zako‰czone niepowodzeniem: GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage
+Komunikat o bà©dzie:
+ Assert.IsTrue - niepowodzenie. Exception message was not descriptive enough. The string did not contain the expected value. Actual string:
+
+No registration for type RealUserService could be found and an implicit registration could not be made. Please note that the container instance you are resolving from contains no registrations. Could it be that you accidentally created a new -and empty- container? The delegate that was registered for service type IUserRepository using the UnregisteredTypeEventArgs.Register(Func<object>) method returned an object that couldn't be casted to IUserRepository. Nie moæna rzutowaÜ obiektu typu 'SimpleInjector.Tests.Unit.RealUserService' na typ 'SimpleInjector.Tests.Unit.IUserRepository'.
+
+
+Expected value to be in the string:
+
+The delegate that was registered for service type IUserRepository using the UnregisteredTypeEventArgs.Register(Func<object>) method returned an object that couldn't be casted to IUserRepository. Unable to cast object of type 'SimpleInjector.Tests.Unit.RealUserService' to type 'SimpleInjector.Tests.Unit.IUserRepository'.
+
+
+stackTrace: 
+
+   w SimpleInjector.InstanceProducer.GetInstance()
+   w SimpleInjector.Container.GetInstanceFromProducer(InstanceProducer instanceProducer, Type serviceType)
+   w SimpleInjector.Container.GetInstanceForRootType[TService]()
+   w SimpleInjector.Container.GetInstance[TService]()
+   w SimpleInjector.Tests.Unit.ResolveUnregisteredTypeEventTests.<>c__DisplayClass16_0.<GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage>b__1()
+   w SimpleInjector.Tests.Unit.AssertThat.<>c__DisplayClass2_0`1.<ThrowsWithExceptionMessageContains>b__0()
+ <-----------> 
+   w SimpleInjector.UnregisteredTypeEventArgs.UnregisteredTypeEventArgsCallHelper.GetInstance[TService](Func`1 instanceCreator)
+   w lambda_method(Closure )
+   w SimpleInjector.InstanceProducer.BuildAndReplaceInstanceCreatorAndCreateFirstInstance()
+   w SimpleInjector.InstanceProducer.GetInstance()
+ <-----------> 
+   w SimpleInjector.UnregisteredTypeEventArgs.UnregisteredTypeEventArgsCallHelper.GetInstance[TService](Func`1 instanceCreator)
+ <-----------> 
+
+ólad stosu:
+   w SimpleInjector.Tests.Unit.AssertThat.ExceptionMessageContains(String expectedMessage, Exception actualException, String assertMessage)
+   w SimpleInjector.Tests.Unit.AssertThat.<>c__DisplayClass2_0`1.<ThrowsWithExceptionMessageContains>b__0()
+   w SimpleInjector.Tests.Unit.AssertThat.Throws[TException](Action action, String assertMessage)
+   w SimpleInjector.Tests.Unit.AssertThat.ThrowsWithExceptionMessageContains[TException](String expectedMessage, Action action, String assertMessage)
+   w SimpleInjector.Tests.Unit.ResolveUnregisteredTypeEventTests.GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage()
+
+
+ù•czna liczba test¢w: 1460. Zako‰czone pomyòlnie: 1459. Zako‰czone niepowodzeniem: 1. Pomini©te: 0.
+Czas wykonywania testu: 4,9200 Sekundy.
+Uruchomienie testu dla: C:\github\SimpleInjector\src\SimpleInjector.Tests.Unit\bin\Debug\net451\SimpleInjector.Tests.Unit.dll(.NETFramework,Version=v4.5.1)
+Narz©dzie wiersza polecenia firmy Microsoft (R) sàuæ•ce do wykonania test¢w (wersja 15.5.0)
+Copyright (c) Microsoft Corporation. Wszelkie prawa zastrzeæone.
+
+Trwa rozpoczynanie wykonywania testu, czekaj...
+Zako‰czone niepowodzeniem: GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage
+Komunikat o bà©dzie:
+ Assert.IsTrue - niepowodzenie. Exception message was not descriptive enough. The string did not contain the expected value. Actual string:
+
+No registration for type RealUserService could be found and an implicit registration could not be made. Please note that the container instance you are resolving from contains no registrations. Could it be that you accidentally created a new -and empty- container? The delegate that was registered for service type IUserRepository using the UnregisteredTypeEventArgs.Register(Func<object>) method returned an object that couldn't be casted to IUserRepository. Nie moæna rzutowaÜ obiektu typu 'SimpleInjector.Tests.Unit.RealUserService' na typ 'SimpleInjector.Tests.Unit.IUserRepository'.
+
+
+Expected value to be in the string:
+
+The delegate that was registered for service type IUserRepository using the UnregisteredTypeEventArgs.Register(Func<object>) method returned an object that couldn't be casted to IUserRepository. Unable to cast object of type 'SimpleInjector.Tests.Unit.RealUserService' to type 'SimpleInjector.Tests.Unit.IUserRepository'.
+
+
+stackTrace: 
+
+   w SimpleInjector.InstanceProducer.GetInstance()
+   w SimpleInjector.Container.GetInstanceFromProducer(InstanceProducer instanceProducer, Type serviceType)
+   w SimpleInjector.Container.GetInstanceForRootType[TService]()
+   w SimpleInjector.Container.GetInstance[TService]()
+   w SimpleInjector.Tests.Unit.ResolveUnregisteredTypeEventTests.<>c__DisplayClass16_0.<GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage>b__1()
+   w SimpleInjector.Tests.Unit.AssertThat.<>c__DisplayClass2_0`1.<ThrowsWithExceptionMessageContains>b__0()
+ <-----------> 
+   w SimpleInjector.UnregisteredTypeEventArgs.UnregisteredTypeEventArgsCallHelper.GetInstance[TService](Func`1 instanceCreator)
+   w lambda_method(Closure )
+   w SimpleInjector.InstanceProducer.BuildAndReplaceInstanceCreatorAndCreateFirstInstance()
+   w SimpleInjector.InstanceProducer.GetInstance()
+ <-----------> 
+   w SimpleInjector.UnregisteredTypeEventArgs.UnregisteredTypeEventArgsCallHelper.GetInstance[TService](Func`1 instanceCreator)
+ <-----------> 
+
+ólad stosu:
+   w SimpleInjector.Tests.Unit.AssertThat.ExceptionMessageContains(String expectedMessage, Exception actualException, String assertMessage)
+   w SimpleInjector.Tests.Unit.AssertThat.<>c__DisplayClass2_0`1.<ThrowsWithExceptionMessageContains>b__0()
+   w SimpleInjector.Tests.Unit.AssertThat.Throws[TException](Action action, String assertMessage)
+   w SimpleInjector.Tests.Unit.AssertThat.ThrowsWithExceptionMessageContains[TException](String expectedMessage, Action action, String assertMessage)
+   w SimpleInjector.Tests.Unit.ResolveUnregisteredTypeEventTests.GetInstance_EventRegisteredThatReturnsANonAssignableType_ThrowsExceptionWithExpectedMessage()
+
+
+ù•czna liczba test¢w: 1460. Zako‰czone pomyòlnie: 1459. Zako‰czone niepowodzeniem: 1. Pomini©te: 0.
+Czas wykonywania testu: 5,0384 Sekundy.

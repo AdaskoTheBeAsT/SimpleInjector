@@ -34,8 +34,14 @@
         private static ModuleBuilder GetModuleBuilder(string typeName)
         {
             var assemblyName = new AssemblyName(typeName + "_dll");
+            
+    #if NETCOREAPP2_0
+            AssemblyBuilder assemblyBuilder =
+                AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
+    #else
             AssemblyBuilder assemblyBuilder =
                 AppDomain.CurrentDomain.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
+    #endif
             return assemblyBuilder.DefineDynamicModule("MainModule" + Guid.NewGuid().ToString());
         }
     }

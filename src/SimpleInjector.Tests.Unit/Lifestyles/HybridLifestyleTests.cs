@@ -25,11 +25,19 @@
             var expression = registration.BuildExpression().ToString();
 
             // Assert
+            #if NETCOREAPP2_0
+            Assert.AreEqual(@"
+                IIF(Invoke(value(System.Func`1[System.Boolean])), 
+                    Convert(new SqlUserRepository(), SqlUserRepository), 
+                    Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository), SqlUserRepository))".TrimInside(),
+                expression);
+            #else
             Assert.AreEqual(@"
                 IIF(Invoke(value(System.Func`1[System.Boolean])), 
                     Convert(new SqlUserRepository()), 
                     Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository)))".TrimInside(),
                 expression);
+            #endif
         }
 
         [TestMethod]
@@ -52,9 +60,15 @@
                 "IIF(Invoke(value(System.Func`1[System.Boolean])), Convert("),
                 "Actual: " + expression);
 
+            #if NETCOREAPP2_0
+            Assert.IsTrue(expression.EndsWith(
+                    "Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository), IUserRepository))"),
+                "Actual: " + expression);
+            #else
             Assert.IsTrue(expression.EndsWith(
                 "Convert(value(SimpleInjector.Tests.Unit.SqlUserRepository)))"),
                 "Actual: " + expression);
+            #endif
         }
 
         [TestMethod]
@@ -308,12 +322,19 @@
                 "The ExpressionBuilt event is expected to be called once when resolving a Hybrid lifestyled " +
                 "instance, since this is the time that decorators would be applied and they should be " + 
                 "to the whole expression.");
-
+            #if NETCOREAPP2_0
+            Assert.AreEqual(@"
+                IIF(Invoke(value(System.Func`1[System.Boolean])), 
+                    Convert(new SqlUserRepository(), SqlUserRepository), 
+                    Convert(new SqlUserRepository(), SqlUserRepository))".TrimInside(),
+                expression.ToString());
+            #else            
             Assert.AreEqual(@"
                 IIF(Invoke(value(System.Func`1[System.Boolean])), 
                     Convert(new SqlUserRepository()), 
                     Convert(new SqlUserRepository()))".TrimInside(),
                 expression.ToString());
+            #endif
         }
 
         [TestMethod]
